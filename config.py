@@ -23,7 +23,7 @@ DEEPSEEK_MODEL = "deepseek-chat"
 
 # 其他配置
 TIMEOUT = 10  # 请求超时时间(秒)
-MAX_ATTRACTIONS = 6  # 最多返回的景点数量
+MAX_ATTRACTIONS = 8  # 最多返回的景点数量
 
 # CORS配置
 ALLOWED_ORIGINS = [

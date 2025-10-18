@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import date
+from dataclasses import dataclass
 
 
 # 请求模型:定义前端发送的数据格式
@@ -54,6 +55,17 @@ class FlightInfo(BaseModel):
     arrival_time: str
     price: str
     airline: str
+    aircraft_type: Optional[str] = ""
+    duration: Optional[str] = ""
+    punctuality_rate: Optional[str] = ""
+    seat_class: Optional[str] = ""
+    transfer: Optional[str] = ""
+    discount: Optional[str] = ""
+
+    class Config:
+        json_encoders = {
+            # 如果有自定义类型的编码需求可以在这里添加
+        }
 
 
 # 响应模型:定义返回给前端的数据格式

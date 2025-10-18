@@ -4,40 +4,14 @@ import json
 from typing import List, Dict
 from schemas import WeatherInfo, Attraction, FlightInfo
 import random
-
-
-def get_city_location(city: str) -> Dict:
-    """获取城市的地理位置信息(经纬度) - 保留原函数，可能在其他地方使用"""
-    try:
-        # 使用和风天气的城市查询API
-        params = {
-            "key": config.WEATHER_API_KEY,
-            "location": city,
-            "adm": "中国"
-        }
-        response = requests.get(config.WEATHER_GEO_URL, params=params, timeout=config.TIMEOUT)
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("code") == "200" and data.get("location"):
-            location = data["location"][0]
-            return {
-                "id": location.get("id"),
-                "name": location.get("name"),
-                "lat": location.get("lat"),
-                "lon": location.get("lon")
-            }
-        return None
-    except Exception as e:
-        print(f"城市位置查询失败: {e}")
-        return None
-
+from datetime import datetime, timedelta
+from typing import List
 
 def get_weather_info(city: str) -> List[WeatherInfo]:
-    """获取未来3天天气信息 - 使用聚合数据API"""
+    """获取未来4天天气信息 - 使用聚合数据API"""
     try:
         params = {
-            "key": config.WEATHER_API_KEY,  # 需要在config中配置聚合数据的API KEY
+            "key": config.WEATHER_API_KEY,
             "city": city
         }
 
@@ -115,10 +89,10 @@ def get_attractions(city: str) -> List[Attraction]:
     """获取景点信息 - 使用聚合数据景区查询API"""
     try:
         params = {
-            "key": config.MAP_API_KEY,  # 需要在config中配置聚合数据的API KEY
+            "key": config.MAP_API_KEY,
             "word": city,
             "city": city,
-            "num": config.MAX_ATTRACTIONS  # 返回数量，建议在config中设置
+            "num": config.MAX_ATTRACTIONS  # 返回数量
         }
 
         response = requests.get(
@@ -134,7 +108,7 @@ def get_attractions(city: str) -> List[Attraction]:
         # 检查API返回状态
         if data.get("error_code") == 0 and data.get("result"):
             result = data["result"]
-            scenic_list = result.get("list", [])
+            scenic_list = result.get("list", [])[:config.MAX_ATTRACTIONS] # 只取若干项
 
             for scenic in scenic_list:
                 # 处理景点内容，去除HTML标签和多余空格
@@ -163,22 +137,99 @@ def get_attractions(city: str) -> List[Attraction]:
 def get_flight_info(departure_city: str, destination: str, date: str) -> List[FlightInfo]:
     """获取航班信息(模拟数据,可替换为真实API)"""
     try:
-        # 这里使用模拟数据,实际项目中应该调用真实的航班API
-        # 如:携程API、飞常准API、航旅纵横API等
+        # 航空公司代码和名称映射
+        airlines = {
+            "CA": "中国国际航空",
+            "MU": "东方航空",
+            "CZ": "南方航空",
+            "HU": "海南航空",
+            "ZH": "深圳航空",
+            "MF": "厦门航空",
+            "9C": "春秋航空",
+            "KN": "中国联合航空"
+        }
 
-        # 模拟航班数据
-        mock_flights = [
-            FlightInfo(
-                flight_number=f"{random.choice(['CA', 'MU', 'CZ'])}{random.randint(1000, 9999)}",
-                departure_time=f"{random.randint(6, 22):02d}:{random.choice(['00', '30'])}",
-                arrival_time=f"{random.randint(8, 23):02d}:{random.choice(['00', '30'])}",
-                price=f"¥{random.randint(500, 2000)}",
-                airline=random.choice(["中国国际航空", "东方航空", "南方航空"])
-            )
-            for _ in range(3)
+        # 常见机型
+        aircraft_types = ["B737", "A320", "A321", "B787", "A330", "B777", "A350"]
+
+        # 根据距离生成合理的飞行时长（分钟）
+        city_pairs = {
+            ("北京", "上海"): 120, ("上海", "广州"): 135, ("北京", "广州"): 180,
+            ("深圳", "北京"): 185, ("成都", "上海"): 150, ("杭州", "广州"): 125
+        }
+
+        # 计算基础飞行时间
+        base_duration = city_pairs.get((departure_city, destination), random.randint(90, 180))
+
+        # 生成不同时间段的航班
+        time_slots = [
+            ("06:00", "08:00"),  # 早班
+            ("09:00", "12:00"),  # 上午
+            ("13:00", "16:00"),  # 下午
+            ("17:00", "20:00"),  # 傍晚
+            ("21:00", "23:00")  # 晚班
         ]
 
+        mock_flights = []
+
+        for i in range(random.randint(4, 8)):  # 生成4-8个航班
+            airline_code, airline_name = random.choice(list(airlines.items()))
+
+            # 选择时间段
+            dep_slot = random.choice(time_slots)
+            dep_hour = random.randint(int(dep_slot[0][:2]), int(dep_slot[1][:2]))
+            dep_minute = random.choice(["00", "10", "20", "30", "40", "50"])
+            departure_time = f"{dep_hour:02d}:{dep_minute}"
+
+            # 计算到达时间
+            dep_datetime = datetime.strptime(departure_time, "%H:%M")
+            arr_datetime = dep_datetime + timedelta(minutes=base_duration + random.randint(-10, 30))
+            arrival_time = arr_datetime.strftime("%H:%M")
+
+            # 计算飞行时长
+            duration_minutes = int((arr_datetime - dep_datetime).total_seconds() / 60)
+            duration_str = f"{duration_minutes // 60}h{duration_minutes % 60:02d}m"
+
+            # 生成价格（考虑时间段、航空公司等因素）
+            base_price = 800
+            if dep_slot[0] == "06:00":  # 早班便宜
+                base_price -= 100
+            elif dep_slot[0] == "21:00":  # 晚班便宜
+                base_price -= 150
+            else:  # 黄金时段贵
+                base_price += 200
+
+            if airline_code in ["9C", "KN"]:  # 廉价航空
+                base_price -= 300
+
+            final_price = max(400, base_price + random.randint(-100, 200))
+
+            # 舱位类型
+            seat_classes = ["经济舱", "超级经济舱", "商务舱", "头等舱"]
+            seat_weights = [70, 15, 10, 5]  # 权重
+
+            # 折扣信息
+            discounts = ["", "学生价95折", "会员优惠", "限时特惠", "往返立减"]
+
+            mock_flights.append(FlightInfo(
+                flight_number=f"{airline_code}{random.randint(1300, 8999)}",
+                departure_time=departure_time,
+                arrival_time=arrival_time,
+                price=f"¥{final_price}",
+                airline=airline_name,
+                aircraft_type=random.choice(aircraft_types),
+                duration=duration_str,
+                punctuality_rate=f"{random.randint(75, 95)}%",
+                seat_class=random.choices(seat_classes, weights=seat_weights)[0],
+                transfer="经停" if random.random() < 0.2 else "直飞",
+                discount=random.choice(discounts) if random.random() < 0.3 else ""
+            ))
+
+        # 按价格排序
+        mock_flights.sort(key=lambda x: int(x.price[1:]))
+
         return mock_flights
+
     except Exception as e:
         print(f"航班API请求失败: {e}")
         return []
@@ -210,7 +261,7 @@ def generate_itinerary_with_llm(
 
         interests_text = "、".join(interests) if interests else "常规观光"
 
-        prompt = f"""你是一位专业的旅行规划师。请为用户制定一份{destination}{days}天旅行计划。
+        prompt = f"""你是一位专业的旅行规划师。请为用户制定一份{destination}{days}天旅行计划。内容无需特别精细，但要求全面。计划尽量控制在600字以内。
 
 **用户需求:**
 - 目的地: {destination}

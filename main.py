@@ -83,10 +83,10 @@ async def generate_travel_plan(request: schemas.TravelRequest):
     生成旅行规划的核心接口
 
     该接口整合了以下外部API服务:
-    1. 和风天气API - 获取目的地天气预报
-    2. 高德地图API - 获取景点信息(POI)
+    1. 天气API - 获取目的地天气预报
+    2. 地图API - 获取景点信息(POI)
     3. 航班信息API - 获取航班数据(可选)
-    4. OpenAI/大模型API - 生成智能行程规划
+    4. 大语言模型API - 生成智能行程规划
     """
     logger.info(f"收到行程规划请求: {request.destination}, {request.days}天")
 
@@ -98,15 +98,15 @@ async def generate_travel_plan(request: schemas.TravelRequest):
         if request.days < 1 or request.days > 30:
             raise HTTPException(status_code=400, detail="旅行天数必须在1-30天之间")
 
-        # 1. 获取天气信息(API 1: 和风天气)
+        # 1. 获取天气信息
         logger.info(f"正在获取{request.destination}的天气信息...")
         weather_info = services.get_weather_info(request.destination)
 
-        # 2. 获取景点信息(API 2: 高德地图)
+        # 2. 获取景点信息
         logger.info(f"正在获取{request.destination}的景点信息...")
         attractions = services.get_attractions(request.destination)
 
-        # 3. 获取航班信息(API 3: 航班信息API - 可选)
+        # 3. 获取航班信息
         flight_info = None
         if request.departure_city and request.start_date:
             logger.info(f"正在查询航班信息: {request.departure_city} -> {request.destination}")
@@ -116,7 +116,7 @@ async def generate_travel_plan(request: schemas.TravelRequest):
                 request.start_date
             )
 
-        # 4. 调用大模型生成行程(API 4: OpenAI/大模型)
+        # 4. 调用大模型生成行程
         logger.info("正在生成智能行程规划...")
         itinerary = services.generate_itinerary_with_llm(
             destination=request.destination,
@@ -218,6 +218,161 @@ async def api_info():
         ]
     }
 
+
+@app.get("/api/test/flights")
+async def test_flights(
+        departure_city: str = "北京",
+        destination: str = "上海",
+        date: str = None
+):
+    """测试航班信息API接口"""
+    try:
+        # 如果没有提供日期，使用明天的日期
+        if not date:
+            from datetime import datetime, timedelta
+            tomorrow = datetime.now() + timedelta(days=1)
+            date = tomorrow.strftime("%Y-%m-%d")
+
+        # 验证日期格式
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="日期格式错误，请使用 YYYY-MM-DD 格式"
+            )
+
+        logger.info(f"测试航班查询: {departure_city} -> {destination} on {date}")
+
+        # 获取航班信息
+        flights = services.get_flight_info(departure_city, destination, date)
+
+        return {
+            "status": "success",
+            "query": {
+                "departure_city": departure_city,
+                "destination": destination,
+                "date": date
+            },
+            "flight_count": len(flights),
+            "flights": [flight.dict() for flight in flights],
+            "summary": {
+                "cheapest": min([int(f.price[1:]) for f in flights]) if flights else 0,
+                "most_expensive": max([int(f.price[1:]) for f in flights]) if flights else 0,
+                "airlines": list(set([f.airline for f in flights])),
+                "direct_flights": len([f for f in flights if f.transfer == "直飞"])
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"测试航班API时发生错误: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"航班查询失败: {str(e)}"
+        )
+
+
+@app.get("/api/test/flights/airlines")
+async def test_airlines_info():
+    """获取支持的航空公司信息"""
+    return {
+        "status": "success",
+        "supported_airlines": [
+            {
+                "code": "CA",
+                "name": "中国国际航空",
+                "type": "全服务航空"
+            },
+            {
+                "code": "MU",
+                "name": "东方航空",
+                "type": "全服务航空"
+            },
+            {
+                "code": "CZ",
+                "name": "南方航空",
+                "type": "全服务航空"
+            },
+            {
+                "code": "HU",
+                "name": "海南航空",
+                "type": "全服务航空"
+            },
+            {
+                "code": "ZH",
+                "name": "深圳航空",
+                "type": "全服务航空"
+            },
+            {
+                "code": "MF",
+                "name": "厦门航空",
+                "type": "全服务航空"
+            },
+            {
+                "code": "9C",
+                "name": "春秋航空",
+                "type": "廉价航空"
+            },
+            {
+                "code": "KN",
+                "name": "中国联合航空",
+                "type": "廉价航空"
+            }
+        ],
+        "total_airlines": 8,
+        "note": "当前为模拟数据，实际支持的航空公司可能更多"
+    }
+
+
+@app.get("/api/test/flights/routes")
+async def test_popular_routes():
+    """获取热门航线信息"""
+    popular_routes = [
+        {
+            "route": "北京 - 上海",
+            "duration": "2h-2.5h",
+            "frequency": "高频",
+            "typical_price": "¥400-¥1200",
+            "description": "京沪快线，航班密集"
+        },
+        {
+            "route": "上海 - 广州",
+            "duration": "2h15m-2h45m",
+            "frequency": "高频",
+            "typical_price": "¥500-¥1500",
+            "description": "华东华南主要航线"
+        },
+        {
+            "route": "北京 - 广州",
+            "duration": "3h-3.5h",
+            "frequency": "中高频",
+            "typical_price": "¥600-¥1800",
+            "description": "南北干线"
+        },
+        {
+            "route": "深圳 - 北京",
+            "duration": "3h-3.5h",
+            "frequency": "中高频",
+            "typical_price": "¥550-¥1600",
+            "description": "商务热门航线"
+        },
+        {
+            "route": "成都 - 上海",
+            "duration": "2.5h-3h",
+            "frequency": "中频",
+            "typical_price": "¥450-¥1400",
+            "description": "西南华东重要航线"
+        }
+    ]
+
+    return {
+        "status": "success",
+        "popular_routes": popular_routes,
+        "total_routes": len(popular_routes),
+        "note": "以上为常见航线参考信息"
+    }
 
 if __name__ == "__main__":
     import uvicorn
